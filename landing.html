@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activate RightOwner</title>
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .land { max-width: 560px; margin: 40px auto; padding: 0 16px; width: 100%; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: var(--shadow); }
+    .panel h2 { margin: 0 0 8px; font-size: 20px; }
+    .panel p { color: var(--muted); margin: 0 0 16px; }
+    dl.details { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0 0 20px; }
+    dl.details dt { color: var(--muted); font-weight: 600; }
+    dl.details dd { margin: 0; word-break: break-word; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .err { color: var(--danger); font-weight: 600; }
+    .ok { font-size: 34px; line-height: 1; margin-bottom: 8px; }
+  </style>
+  <script src="config.js"></script>
+  <script src="lib/msal-browser.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img class="logo" src="logo.png" alt="" width="36" height="36">
+      <div>
+        <h1>RightOwner</h1>
+        <p class="tagline">by RuBuild Services</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="land">
+    <section class="panel" id="panel" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading…</p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <a href="https://rubuild.com/support" target="_blank" rel="noopener">Help</a> ·
+    <a href="https://rubuild.com/privacy" target="_blank" rel="noopener">Privacy</a> ·
+    <a href="https://rubuild.com/terms" target="_blank" rel="noopener">Terms</a>
+  </footer>
+
+  <script src="landing.js"></script>
+</body>
+</html>
