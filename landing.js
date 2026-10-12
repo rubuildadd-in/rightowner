@@ -17,6 +17,16 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
   function view(html) { panel.innerHTML = html; }
+  function setStep(n) {
+    document.querySelectorAll(".step").forEach((el) => {
+      const k = parseInt(el.dataset.step, 10);
+      el.classList.toggle("on", k === n);
+      el.classList.toggle("done", k < n);
+      el.querySelector("i").textContent = k < n ? "✓" : String(k);
+    });
+  }
+  const MS_LOGO = '<span class="ms-logo" aria-hidden="true"><b style="background:#f25022"></b><b style="background:#7fba00"></b><b style="background:#00a4ef"></b><b style="background:#ffb900"></b></span>';
+  const PLAN_NOTES = { pro: "Unlimited items · companies up to 250 people", business: "Unlimited items · any company size", free: "" };
   function loading(msg) { view('<div class="spinner" aria-hidden="true"></div><p>' + esc(msg) + "</p>"); }
   function errorView(msg, retry) {
     view('<h2>Something needs attention</h2><p class="err">' + esc(msg) + '</p><div class="actions">' +
@@ -70,9 +80,10 @@
   }
 
   function signInView() {
-    view('<h2>Welcome to RightOwner</h2>' +
-      '<p>Thanks for your purchase. Sign in with your Microsoft work account to confirm and activate your subscription. It takes about a minute.</p>' +
-      '<div class="actions"><button class="btn primary" id="signin" type="button">Sign in with Microsoft</button></div>');
+    setStep(1);
+    view('<h2>Thanks for choosing RightOwner</h2>' +
+      '<p>Sign in with your Microsoft work account so we can confirm your purchase and switch your plan on. It takes about a minute.</p>' +
+      '<div class="actions"><button class="btn primary ms-btn" id="signin" type="button">' + MS_LOGO + 'Sign in with Microsoft</button></div>');
     document.getElementById("signin").addEventListener("click", async () => {
       try {
         if (await signIn(true)) await showDetails();
@@ -92,10 +103,12 @@
     if (d.status === "Unsubscribed") return errorView("This subscription has been cancelled. To buy again, open RightOwner on Microsoft AppSource.", null);
     if (d.status === "Suspended") return errorView("This subscription is suspended, usually because of a payment problem. Please check Billing in the Microsoft 365 admin center.", null);
 
+    setStep(2);
     view('<h2>Confirm your subscription</h2>' +
-      '<p>Check these details, then click Activate. Microsoft will bill your organization.</p>' +
+      '<p>Check the details below, then click Activate. Microsoft bills your organization; there is nothing to pay here.</p>' +
+      '<div class="plan-card"><img src="logo.png" alt=""><div><div class="pn">' + esc(PLAN_NAMES[d.plan] || d.planId) + '</div>' +
+      '<div class="pt">' + esc(PLAN_NOTES[d.plan] || "") + '</div></div><span class="pill">For your whole organization</span></div>' +
       '<dl class="details">' +
-      "<dt>Plan</dt><dd>" + esc(PLAN_NAMES[d.plan] || d.planId) + "</dd>" +
       (d.term ? "<dt>Billing</dt><dd>" + esc(termText(d.term)) + "</dd>" : "") +
       "<dt>Subscription</dt><dd>" + esc(d.subscriptionName) + "</dd>" +
       "<dt>Purchased by</dt><dd>" + esc(d.purchaser && d.purchaser.email) + "</dd>" +
@@ -103,7 +116,7 @@
       "</dl>" +
       (d.beneficiary && d.signedInTenant && d.beneficiary.tenantId !== d.signedInTenant
         ? '<p class="err">Note: you are signed in to a different organization from the one this subscription is for. The plan will apply to the organization that bought it.</p>' : "") +
-      '<div class="actions"><button class="btn primary" id="activate" type="button">Activate</button>' +
+      '<div class="actions"><button class="btn primary" id="activate" type="button">Activate my plan</button>' +
       '<button class="btn" id="switch" type="button">Use a different account</button></div>');
 
     document.getElementById("activate").addEventListener("click", activate);
@@ -123,9 +136,13 @@
   }
 
   function done(d) {
-    view('<div class="ok" aria-hidden="true">✓</div><h2>You\'re all set</h2>' +
-      "<p>" + esc(PLAN_NAMES[d.plan] || "RightOwner") + " is active for your organization. Everyone in your company can use it straight away; there is nothing to install per person.</p>" +
-      "<p><strong>Next:</strong> open RightOwner in Microsoft Teams. If your organization hasn't added it yet, a Teams admin can add it from Teams admin center → Manage apps.</p>" +
+    setStep(3);
+    view('<div class="ok" aria-hidden="true">✓</div><h2>You\'re all set!</h2>' +
+      "<p>" + esc(PLAN_NAMES[d.plan] || "RightOwner") + " is now active for everyone in your organization. There is nothing to install per person.</p>" +
+      '<div class="next"><b>Get started in 3 steps</b><ol>' +
+      "<li>Open RightOwner in Microsoft Teams (a Teams admin may need to allow it first in Teams admin center → Manage apps).</li>" +
+      "<li>A Microsoft 365 admin approves the app once and clicks <b>Create the directory</b>.</li>" +
+      "<li>Add your first items, or import your spreadsheet with <b>More → Import from CSV</b>.</li></ol></div>" +
       '<div class="actions"><a class="btn primary" href="' + esc(TEAMS_LINK) + '" target="_blank" rel="noopener">Open RightOwner in Teams</a>' +
       '<a class="btn" href="https://admin.microsoft.com/adminportal/home#/subscriptions" target="_blank" rel="noopener">Manage billing</a></div>');
   }
@@ -133,6 +150,7 @@
   async function startPage() {
     if (!CFG.billingUrl) return errorView("Purchases aren't switched on yet. Please email support and we'll help you.", null);
     if (!token) {
+      document.querySelector(".steps").hidden = true;
       return view('<h2>Manage your RightOwner subscription</h2>' +
         '<p>This page is opened automatically after you buy RightOwner on Microsoft AppSource or in Teams.</p>' +
         '<p>To change or cancel your plan, use the Microsoft 365 admin center → Billing → Your products.</p>' +
@@ -144,6 +162,5 @@
     signInView();
   }
 
-  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) document.body.classList.add("theme-dark");
   startPage();
 })();
