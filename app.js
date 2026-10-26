@@ -218,7 +218,7 @@
       "/items?$expand=fields($select=" + FIELDS.join(",") + ")&$top=500";
     while (url) {
       const page = await graph("GET", url);
-      (page.value || []).forEach((it) => items.push({ id: it.id, fields: it.fields || {} }));
+      (page.value || []).forEach((it) => items.push({ id: it.id, createdBy: it.createdBy, fields: it.fields || {} }));
       url = page["@odata.nextLink"] || null;
     }
     items.sort((a, b) => String(a.fields.Title || "").localeCompare(String(b.fields.Title || "")));
@@ -235,7 +235,7 @@
         requests: chunk.map((email, n) => ({
           id: String(n),
           method: "GET",
-          url: "/users/" + encodeURIComponent(email) + "?$select=displayName,jobTitle,accountEnabled,mail,userPrincipalName"
+          url: "/users/" + encodeURIComponent(email) + "?$select=id,displayName,jobTitle,accountEnabled,mail,userPrincipalName"
         }))
       };
       try {
@@ -243,7 +243,7 @@
         (res.responses || []).forEach((r) => {
           const email = chunk[parseInt(r.id, 10)];
           if (r.status === 200) {
-            state.people[email] = { found: true, enabled: r.body.accountEnabled !== false, displayName: r.body.displayName, jobTitle: r.body.jobTitle };
+            state.people[email] = { found: true, enabled: r.body.accountEnabled !== false, displayName: r.body.displayName, jobTitle: r.body.jobTitle, id: r.body.id, upn: String(r.body.userPrincipalName || "").toLowerCase() };
           } else if (r.status === 404) {
             state.people[email] = { found: false, enabled: false };
           }
@@ -459,7 +459,7 @@
         state.editing.fields = Object.assign({}, state.editing.fields, fields);
       } else {
         const created = await graph("POST", base, { fields });
-        state.items.push({ id: created.id, fields: Object.assign({}, fields) });
+        state.items.push({ id: created.id, mine: true, fields: Object.assign({}, fields) });
         state.items.sort((a, b) => String(a.fields.Title || "").localeCompare(String(b.fields.Title || "")));
       }
       await checkPeople([fields.OwnerEmail, fields.BackupEmail]);
@@ -503,10 +503,45 @@
     });
   }
 
+
+  // Who may delete an entry: its owner, its backup, or the person who added it.
+  // (Hard control stays with SharePoint: only people with Edit access to the home site can change the list at all.)
+  function myIds() {
+    const a = state.account || {};
+    const ids = new Set();
+    if (a.localAccountId) ids.add(String(a.localAccountId).toLowerCase());
+    if (a.idTokenClaims && a.idTokenClaims.oid) ids.add(String(a.idTokenClaims.oid).toLowerCase());
+    const names = new Set();
+    if (a.username) names.add(String(a.username).toLowerCase());
+    const hint = loginHint && loginHint();
+    if (hint) names.add(String(hint).toLowerCase());
+    return { ids, names };
+  }
+  function canDelete(item) {
+    if (!item) return false;
+    if (item.mine) return true;
+    const me = myIds();
+    const f = item.fields || {};
+    const created = item.createdBy && item.createdBy.user;
+    if (created && created.id && me.ids.has(String(created.id).toLowerCase())) return true;
+    if (created && created.email && me.names.has(String(created.email).toLowerCase())) return true;
+    for (const e of [f.OwnerEmail, f.BackupEmail]) {
+      if (!e) continue;
+      const key = String(e).toLowerCase();
+      if (me.names.has(key)) return true;
+      const p = state.people[key];
+      if (p && p.id && me.ids.has(String(p.id).toLowerCase())) return true;
+      if (p && p.upn && me.names.has(p.upn)) return true;
+    }
+    return false;
+  }
+  const NO_DELETE_MSG = "Only this entry's owner, its backup or the person who added it can delete it. You can still edit it, or ask your Microsoft 365 admin.";
+
   async function deleteItem() {
     const item = state.editing;
     if (!item) return;
-    if (!(await askConfirm("Delete “" + (item.fields.Title || "this item") + "” from the directory?", "Delete", true))) return;
+    if (!canDelete(item)) { formError(NO_DELETE_MSG); return; }
+    if (!(await askConfirm("Delete “" + (item.fields.Title || "this item") + "” from the directory?\n\nEveryone in your company will stop seeing it in RightOwner.", "Delete", true))) return;
     try {
       await graph("DELETE", "/sites/" + state.siteId + "/lists/" + state.listId + "/items/" + item.id);
       state.items = state.items.filter((i) => i !== item);
@@ -622,7 +657,7 @@
       try {
         const res = await graph("POST", "/$batch", body);
         (res.responses || []).forEach((r) => {
-          if (r.status === 201) { ok++; state.items.push({ id: r.body.id, fields: chunk[parseInt(r.id, 10)] }); }
+          if (r.status === 201) { ok++; state.items.push({ id: r.body.id, mine: true, fields: chunk[parseInt(r.id, 10)] }); }
           else { failed++; if (r.status === 403) denied = true; }
         });
       } catch (e) {
