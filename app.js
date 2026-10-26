@@ -928,6 +928,12 @@
     $("cancelBtn").addEventListener("click", () => $("itemDialog").close());
     $("itemForm").addEventListener("submit", saveItem);
     $("deleteBtn").addEventListener("click", deleteItem);
+    if (!$("historyBtn") && $("refreshBtn")) {
+      // Teams can keep an older copy of index.html for a while; add the menu item ourselves if it's missing.
+      const hb = document.createElement("button");
+      hb.type = "button"; hb.id = "historyBtn"; hb.textContent = "Activity history";
+      $("refreshBtn").parentNode.insertBefore(hb, $("refreshBtn"));
+    }
     if ($("historyBtn")) $("historyBtn").addEventListener("click", openHistory);
     document.querySelectorAll(".person-field").forEach(setupPersonField);
 
