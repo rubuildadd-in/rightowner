@@ -70,26 +70,26 @@
 
   <dialog id="itemDialog" aria-labelledby="dlgTitle">
     <form id="itemForm" method="dialog">
-      <h2 id="dlgTitle">Add item</h2>
-      <label><span>What is it? <span class="req">*</span></span>
-        <input name="Title" required maxlength="255" placeholder="e.g. Payroll, VPN access, Office lease">
+      <h2 id="dlgTitle">Add to the directory</h2>
+      <label><span>What do people ask about? <span class="req">*</span></span>
+        <input name="Title" required maxlength="255" placeholder="A system, task, vendor or budget, e.g. Payroll, VPN access">
       </label>
-      <label>Category
-        <input name="Category" maxlength="100" list="categoryList" placeholder="e.g. Finance, IT, HR, Vendor">
+      <label><span>Team or area <span style="font-weight:400;color:var(--muted)">(optional)</span></span>
+        <input name="Category" maxlength="100" list="categoryList" placeholder="e.g. Finance, IT, HR, Facilities">
         <datalist id="categoryList"></datalist>
       </label>
-      <label>Description
-        <textarea name="Description" rows="3" maxlength="2000" placeholder="What does the owner handle? When should people contact them?"></textarea>
+      <label><span>When should people contact the owner? <span style="font-weight:400;color:var(--muted)">(optional)</span></span>
+        <textarea name="Description" rows="3" maxlength="2000" placeholder="e.g. Salary changes, payslip questions, new joiner setup"></textarea>
       </label>
       <div class="person-field" data-role="Owner">
-        <label><span>Owner <span class="req">*</span></span>
-          <input class="person-input" placeholder="Start typing a name or email" autocomplete="off">
+        <label><span>Owner: the main person to ask <span class="req">*</span></span>
+          <input class="person-input" placeholder="Type a colleague's name or email" autocomplete="off">
         </label>
         <ul class="suggest" hidden></ul>
       </div>
       <div class="person-field" data-role="Backup">
-        <label>Backup
-          <input class="person-input" placeholder="Start typing a name or email" autocomplete="off">
+        <label><span>Backup: who to ask when the owner is away <span style="font-weight:400;color:var(--muted)">(optional)</span></span>
+          <input class="person-input" placeholder="Type a colleague's name or email" autocomplete="off">
         </label>
         <ul class="suggest" hidden></ul>
       </div>
@@ -106,6 +106,6 @@
   <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
   <div class="toast" id="toast" role="status" hidden></div>
 
-  <script src="app.js?v=1.0.1"></script>
+  <script src="app.js?v=1.0.1-2"></script>
 </body>
 </html>

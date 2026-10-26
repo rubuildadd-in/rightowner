@@ -410,7 +410,7 @@
     const form = $("itemForm");
     form.reset();
     $("formError").hidden = true;
-    $("dlgTitle").textContent = item ? "Edit item" : "Add item";
+    $("dlgTitle").textContent = item ? "Edit entry" : "Add to the directory";
     $("deleteBtn").hidden = !item;
     const f = item ? item.fields : {};
     form.elements.Title.value = f.Title || "";
