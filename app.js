@@ -473,10 +473,40 @@
     }
   }
 
+
+  // Teams (desktop and mobile) blocks the browser's built-in confirm() box, so we use our own small dialog.
+  function askConfirm(message, okLabel, danger) {
+    return new Promise((resolve) => {
+      const d = document.createElement("dialog");
+      d.className = "confirm-dlg";
+      d.setAttribute("aria-label", "Please confirm");
+      const p = document.createElement("p");
+      p.textContent = message;
+      const row = document.createElement("div");
+      row.className = "dlg-actions";
+      const spacer = document.createElement("span");
+      spacer.className = "spacer";
+      const no = document.createElement("button");
+      no.type = "button"; no.className = "btn"; no.textContent = "Cancel";
+      const yes = document.createElement("button");
+      yes.type = "button"; yes.className = "btn " + (danger ? "danger-solid" : "primary"); yes.textContent = okLabel || "OK";
+      row.append(spacer, no, yes);
+      d.append(p, row);
+      document.body.appendChild(d);
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; try { d.close(); } catch (e) {} d.remove(); resolve(v); };
+      no.addEventListener("click", () => finish(false));
+      yes.addEventListener("click", () => finish(true));
+      d.addEventListener("cancel", (e) => { e.preventDefault(); finish(false); });
+      try { d.showModal(); } catch (e) { d.setAttribute("open", ""); }
+      yes.focus();
+    });
+  }
+
   async function deleteItem() {
     const item = state.editing;
     if (!item) return;
-    if (!window.confirm("Delete “" + (item.fields.Title || "this item") + "” from the directory?")) return;
+    if (!(await askConfirm("Delete “" + (item.fields.Title || "this item") + "” from the directory?", "Delete", true))) return;
     try {
       await graph("DELETE", "/sites/" + state.siteId + "/lists/" + state.listId + "/items/" + item.id);
       state.items = state.items.filter((i) => i !== item);
@@ -573,7 +603,7 @@
       toCreate.push({ Title: title.slice(0, 255), Category: get(map.category).slice(0, 100), Description: get(map.description).slice(0, 2000), OwnerEmail: owner, BackupEmail: backup });
     });
     if (toCreate.length === 0) return toast("Nothing to import (" + skipped + " rows skipped: missing item/owner, bad email, or already listed).", 6000);
-    if (!window.confirm("Import " + toCreate.length + " items?" + (skipped ? " (" + skipped + " rows will be skipped.)" : ""))) return;
+    if (!(await askConfirm("Import " + toCreate.length + " items?" + (skipped ? " (" + skipped + " rows will be skipped.)" : "")))) return;
 
     toast("Importing " + toCreate.length + " items…", 60000);
     await checkPeople(toCreate.flatMap((f) => [f.OwnerEmail, f.BackupEmail]));

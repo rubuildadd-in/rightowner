@@ -194,3 +194,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .in-teams .brand { display: none; }
 .in-teams .topbar { justify-content: flex-end; }
 .in-teams .topbar:has(> #topActions[hidden]) { display: none; }
+
+/* In-app confirm box (Teams blocks the browser's own confirm pop-up). */
+.confirm-dlg { width: min(420px, calc(100vw - 32px)); padding: 20px 22px; }
+.confirm-dlg p { margin: 0 0 14px; white-space: pre-line; line-height: 1.45; }
+.btn.danger-solid { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn.danger-solid:hover { filter: brightness(1.08); }
