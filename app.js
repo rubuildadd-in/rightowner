@@ -301,7 +301,7 @@
         actions.push('<button class="link-btn" data-act="chat" data-email="' + esc(f.OwnerEmail) + '">Chat with owner</button>');
         actions.push('<button class="link-btn" data-act="mail" data-email="' + esc(f.OwnerEmail) + '" data-title="' + esc(f.Title) + '">Email</button>');
       }
-      actions.push('<button class="link-btn edit" data-act="edit" data-id="' + esc(it.id) + '">Edit</button>');
+      actions.push('<button class="link-btn edit" data-act="edit" data-id="' + esc(it.id) + '">' + (canManage(it) ? "Edit" : "View") + '</button>');
       return '<article class="card' + (flag ? " attention" : "") + '">' +
         '<div class="card-head"><h3>' + esc(f.Title || "(untitled)") + "</h3>" +
         (f.Category ? '<span class="cat">' + esc(f.Category) + "</span>" : "") + "</div>" +
@@ -410,8 +410,13 @@
     const form = $("itemForm");
     form.reset();
     $("formError").hidden = true;
-    $("dlgTitle").textContent = item ? "Edit entry" : "Add to the directory";
-    $("deleteBtn").hidden = !item;
+    $("formError").style.color = "";
+    const allowed = !item || canManage(item);
+    $("dlgTitle").textContent = !item ? "Add to the directory" : (allowed ? "Edit entry" : "View entry");
+    $("deleteBtn").hidden = !item || !allowed;
+    $("saveBtn").hidden = !allowed;
+    $("cancelBtn").textContent = allowed ? "Cancel" : "Close";
+    form.querySelectorAll("input, textarea").forEach((el) => { el.disabled = !allowed; });
     const f = item ? item.fields : {};
     form.elements.Title.value = f.Title || "";
     form.elements.Category.value = f.Category || "";
@@ -419,8 +424,9 @@
     const [ownerField, backupField] = form.querySelectorAll(".person-field");
     setPerson(ownerField, f.OwnerEmail, f.OwnerName);
     setPerson(backupField, f.BackupEmail, f.BackupName);
+    if (!allowed) { formError(NO_MANAGE_MSG); $("formError").style.color = "var(--muted)"; }
     $("itemDialog").showModal();
-    form.elements.Title.focus();
+    if (allowed) form.elements.Title.focus();
   }
 
   function formError(msg) {
@@ -450,16 +456,21 @@
       BackupEmail: backup.email,
       BackupName: backup.name
     };
+    if (state.editing && !canManage(state.editing)) return formError(NO_MANAGE_MSG);
     const btn = $("saveBtn");
     btn.disabled = true;
     try {
       const base = "/sites/" + state.siteId + "/lists/" + state.listId + "/items";
       if (state.editing) {
+        const before = Object.assign({}, state.editing.fields);
         await graph("PATCH", base + "/" + state.editing.id + "/fields", fields);
         state.editing.fields = Object.assign({}, state.editing.fields, fields);
+        const changes = describeChanges(before, state.editing.fields);
+        if (changes) logActivity("Edited", fields.Title, state.editing.id, changes, before);
       } else {
         const created = await graph("POST", base, { fields });
         state.items.push({ id: created.id, mine: true, fields: Object.assign({}, fields) });
+        logActivity("Added", fields.Title, created.id, describeEntry(fields), fields);
         state.items.sort((a, b) => String(a.fields.Title || "").localeCompare(String(b.fields.Title || "")));
       }
       await checkPeople([fields.OwnerEmail, fields.BackupEmail]);
@@ -504,6 +515,162 @@
   }
 
 
+
+  // ---------- activity history ----------
+  // Every add, edit, delete, import and restore made in RightOwner is written to a second SharePoint list in the
+  // customer's own site. SharePoint itself records who made each log entry and when, so names can't be faked.
+  const LOG_LIST = "RightOwner Activity Log";
+  const LABELS = { Title: "Entry", Category: "Team or area", Description: "When to contact", OwnerEmail: "Owner", BackupEmail: "Backup" };
+  let logListPromise = null;
+
+  function ensureLogList(create) {
+    if (state.logListId) return Promise.resolve(state.logListId);
+    if (logListPromise) return logListPromise;
+    logListPromise = (async () => {
+      let url = "/sites/" + state.siteId + "/lists?$select=id,displayName&$top=200";
+      while (url) {
+        const page = await graph("GET", url);
+        const hit = (page.value || []).find((l) => l.displayName === LOG_LIST);
+        if (hit) { state.logListId = hit.id; return hit.id; }
+        url = page["@odata.nextLink"] || null;
+      }
+      if (!create) return null;
+      const list = await graph("POST", "/sites/" + state.siteId + "/lists", {
+        displayName: LOG_LIST,
+        description: "History of changes made in the RightOwner Teams app (who, what, when). Managed by RightOwner.",
+        columns: [
+          { name: "Action", text: {} },
+          { name: "EntryId", text: {} },
+          { name: "Details", text: { allowMultipleLines: true, linesForEditing: 6 } },
+          { name: "Snapshot", text: { allowMultipleLines: true, linesForEditing: 2 } }
+        ],
+        list: { template: "genericList" }
+      });
+      state.logListId = list.id;
+      return list.id;
+    })().finally(() => { logListPromise = null; });
+    return logListPromise;
+  }
+
+  function personText(email, name) {
+    if (!email) return "none";
+    return name && name !== email ? name + " <" + email + ">" : email;
+  }
+  function describeEntry(f) {
+    return ["Team or area: " + (f.Category || "none"), "Owner: " + personText(f.OwnerEmail, f.OwnerName),
+      "Backup: " + personText(f.BackupEmail, f.BackupName), "When to contact: " + (f.Description || "none")].join("\n");
+  }
+  function describeChanges(before, after) {
+    const lines = [];
+    Object.keys(LABELS).forEach((k) => {
+      const a = String(before[k] || ""), b = String(after[k] || "");
+      if (a === b) return;
+      if (k === "OwnerEmail") lines.push("Owner: " + personText(a, before.OwnerName) + " → " + personText(b, after.OwnerName));
+      else if (k === "BackupEmail") lines.push("Backup: " + personText(a, before.BackupName) + " → " + personText(b, after.BackupName));
+      else lines.push(LABELS[k] + ": " + (a || "none") + " → " + (b || "none"));
+    });
+    return lines.join("\n");
+  }
+
+  async function logActivity(action, title, entryId, details, snapshot) {
+    try {
+      const listId = await ensureLogList(true);
+      const fields = { Title: String(title || "(untitled)").slice(0, 255), Action: action, EntryId: String(entryId || ""),
+        Details: String(details || "").slice(0, 60000) };
+      if (snapshot) {
+        const snap = {};
+        FIELDS.forEach((k) => { if (snapshot[k]) snap[k] = snapshot[k]; });
+        fields.Snapshot = JSON.stringify(snap);
+      }
+      await graph("POST", "/sites/" + state.siteId + "/lists/" + listId + "/items", { fields });
+    } catch (e) {
+      toast("The change was saved, but it couldn't be added to the activity history.", 5000);
+    }
+  }
+
+  async function loadHistory() {
+    const listId = await ensureLogList(false);
+    if (!listId) return [];
+    const rows = [];
+    let url = "/sites/" + state.siteId + "/lists/" + listId +
+      "/items?$expand=fields($select=Title,Action,EntryId,Details,Snapshot)&$top=500";
+    while (url && rows.length < 5000) {
+      const page = await graph("GET", url);
+      (page.value || []).forEach((it) => rows.push({
+        when: it.createdDateTime,
+        who: (it.createdBy && it.createdBy.user && (it.createdBy.user.displayName || it.createdBy.user.email)) || "Unknown",
+        whoEmail: (it.createdBy && it.createdBy.user && it.createdBy.user.email) || "",
+        f: it.fields || {}
+      }));
+      url = page["@odata.nextLink"] || null;
+    }
+    rows.sort((a, b) => String(b.when).localeCompare(String(a.when)));
+    return rows;
+  }
+
+  function fmtWhen(s) {
+    const d = new Date(s);
+    return isNaN(d) ? String(s || "") : d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  async function openHistory() {
+    const d = document.createElement("dialog");
+    d.className = "history-dlg";
+    d.setAttribute("aria-label", "Activity history");
+    d.style.width = "min(820px, calc(100vw - 32px))";
+    d.innerHTML = '<div style="padding:20px 22px;display:flex;flex-direction:column;gap:12px;max-height:calc(100vh - 80px)">' +
+      '<h2 style="margin:0;font-size:18px">Activity history</h2>' +
+      '<p style="margin:0;color:var(--muted);font-size:13px">Every add, edit, delete, import and restore made in RightOwner, newest first. Microsoft 365 records who made each change. Kept in the “' + esc(LOG_LIST) + '” list on your SharePoint home site.</p>' +
+      '<div class="h-body" style="overflow:auto;border:1px solid var(--line);border-radius:8px;min-height:120px"><p style="padding:14px;margin:0">Loading…</p></div>' +
+      '<div class="dlg-actions"><button type="button" class="btn h-export" disabled>Export to CSV</button><span class="spacer"></span><button type="button" class="btn primary h-close">Close</button></div></div>';
+    document.body.appendChild(d);
+    const close = () => { try { d.close(); } catch (e) {} d.remove(); };
+    d.querySelector(".h-close").addEventListener("click", close);
+    d.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
+    try { d.showModal(); } catch (e) { d.setAttribute("open", ""); }
+
+    const body = d.querySelector(".h-body");
+    let rows;
+    try { rows = await loadHistory(); }
+    catch (e) { body.innerHTML = '<p style="padding:14px;margin:0;color:var(--danger)">' + esc((e && e.message) || "Couldn't load the history.") + "</p>"; return; }
+    if (!rows.length) { body.innerHTML = '<p style="padding:14px;margin:0">No changes recorded yet. From now on, every add, edit and delete will appear here.</p>'; return; }
+
+    body.innerHTML = rows.map((r, i) => {
+      const canRestore = r.f.Action === "Deleted" && r.f.Snapshot;
+      return '<div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:flex-start">' +
+        '<div style="flex:1;min-width:0"><div><b>' + esc(r.f.Action || "") + "</b> · " + esc(r.f.Title || "") + "</div>" +
+        '<div style="color:var(--muted);font-size:12px">' + esc(fmtWhen(r.when)) + " · by " + esc(r.who) + "</div>" +
+        (r.f.Details ? '<div style="white-space:pre-line;font-size:13px;margin-top:4px">' + esc(r.f.Details) + "</div>" : "") + "</div>" +
+        (canRestore ? '<button type="button" class="btn h-restore" data-i="' + i + '">Restore</button>' : "") + "</div>";
+    }).join("");
+
+    const exp = d.querySelector(".h-export");
+    exp.disabled = false;
+    exp.addEventListener("click", () => downloadCSV("rightowner-activity-history.csv",
+      [["When", "Who", "Who email", "Action", "Entry", "Details"]].concat(rows.map((r) => [r.when, r.who, r.whoEmail, r.f.Action, r.f.Title, r.f.Details]))));
+
+    body.querySelectorAll(".h-restore").forEach((b) => b.addEventListener("click", async () => {
+      const r = rows[parseInt(b.dataset.i, 10)];
+      let snap; try { snap = JSON.parse(r.f.Snapshot); } catch (e) { return toast("This entry can't be restored.", 4000); }
+      if (!(await askConfirm("Restore “" + (snap.Title || "this entry") + "” to the directory?", "Restore"))) return;
+      b.disabled = true;
+      try {
+        const fields = {};
+        FIELDS.forEach((k) => { if (snap[k]) fields[k] = snap[k]; });
+        const created = await graph("POST", "/sites/" + state.siteId + "/lists/" + state.listId + "/items", { fields });
+        state.items.push({ id: created.id, mine: true, fields });
+        state.items.sort((x, y) => String(x.fields.Title || "").localeCompare(String(y.fields.Title || "")));
+        render();
+        logActivity("Restored", fields.Title, created.id, describeEntry(fields), fields);
+        b.textContent = "Restored";
+        toast("Restored “" + (fields.Title || "") + "”");
+      } catch (e) {
+        b.disabled = false;
+        toast(friendlyWriteError(e), 6000);
+      }
+    }));
+  }
+
   // Who may delete an entry: its owner, its backup, or the person who added it.
   // (Hard control stays with SharePoint: only people with Edit access to the home site can change the list at all.)
   function myIds() {
@@ -517,7 +684,7 @@
     if (hint) names.add(String(hint).toLowerCase());
     return { ids, names };
   }
-  function canDelete(item) {
+  function canManage(item) {
     if (!item) return false;
     if (item.mine) return true;
     const me = myIds();
@@ -535,16 +702,19 @@
     }
     return false;
   }
-  const NO_DELETE_MSG = "Only this entry's owner, its backup or the person who added it can delete it. You can still edit it, or ask your Microsoft 365 admin.";
+  const canDelete = canManage;
+  const NO_MANAGE_MSG = "Only this entry's owner, its backup or the person who added it can change or delete it. Use “Chat with owner” to ask for a change.";
+  const NO_DELETE_MSG = NO_MANAGE_MSG;
 
   async function deleteItem() {
     const item = state.editing;
     if (!item) return;
-    if (!canDelete(item)) { formError(NO_DELETE_MSG); return; }
+    if (!canManage(item)) { formError(NO_MANAGE_MSG); return; }
     if (!(await askConfirm("Delete “" + (item.fields.Title || "this item") + "” from the directory?\n\nEveryone in your company will stop seeing it in RightOwner.", "Delete", true))) return;
     try {
       await graph("DELETE", "/sites/" + state.siteId + "/lists/" + state.listId + "/items/" + item.id);
       state.items = state.items.filter((i) => i !== item);
+      logActivity("Deleted", item.fields.Title, item.id, describeEntry(item.fields), item.fields);
       $("itemDialog").close();
       render();
       toast("Deleted");
@@ -667,6 +837,8 @@
     }
     state.items.sort((a, b) => String(a.fields.Title || "").localeCompare(String(b.fields.Title || "")));
     render();
+    if (ok) logActivity("Imported", ok + " entries from " + (file && file.name ? file.name : "a CSV file"), "",
+      toCreate.slice(0, 200).map((f) => "• " + f.Title).join("\n") + (toCreate.length > 200 ? "\n…" : ""), null);
     if (denied) toast("You don't have permission to add items. Ask your admin for Edit access to the SharePoint home site.", 7000);
     else toast("Imported " + ok + " items" + (failed ? ", " + failed + " failed" : "") + (skipped ? ", " + skipped + " skipped" : "") + ".", 6000);
   }
@@ -756,6 +928,7 @@
     $("cancelBtn").addEventListener("click", () => $("itemDialog").close());
     $("itemForm").addEventListener("submit", saveItem);
     $("deleteBtn").addEventListener("click", deleteItem);
+    if ($("historyBtn")) $("historyBtn").addEventListener("click", openHistory);
     document.querySelectorAll(".person-field").forEach(setupPersonField);
 
     const menu = $("moreMenu");
