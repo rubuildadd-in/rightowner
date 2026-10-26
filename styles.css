@@ -189,3 +189,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   .topbar, main { padding-left: 16px; padding-right: 16px; }
   .cards { grid-template-columns: 1fr; }
 }
+
+/* Inside Teams the app name and icon are already shown by Teams, so hide our own brand block. */
+.in-teams .brand { display: none; }
+.in-teams .topbar { justify-content: flex-end; }
+.in-teams .topbar:has(> #topActions[hidden]) { display: none; }

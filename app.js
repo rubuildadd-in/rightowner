@@ -87,6 +87,7 @@
     try {
       await microsoftTeams.app.initialize();
       state.inTeams = true;
+      document.body.classList.add("in-teams"); // Teams already shows the app name and icon
       state.ctx = await microsoftTeams.app.getContext();
       applyTheme(state.ctx && state.ctx.app && state.ctx.app.theme);
       microsoftTeams.app.registerOnThemeChangeHandler(applyTheme);
